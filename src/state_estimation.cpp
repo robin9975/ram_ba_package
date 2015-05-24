@@ -16,6 +16,9 @@
 #include <vector>
 #include <cmath>     /* abs */
 
+#include <dynamic_reconfigure/server.h>
+#include <ram/StateEstimationConfig.h>
+
 //! State Estimation class
 class StateEstimation
 {
@@ -32,7 +35,7 @@ private:
 	double prev_time_;				// OLD?
 	double prev_yaw_; 				// OLD?
 	double T_, dt_, K_, rate_x_, rate_y_, rate_z_, rate_yaw_; // OLD? Low Pass filter and State estimation approach of derivative
-	
+
 	std::vector <geometry_msgs::Pose> poses_; 	// Previous poses
 	std::vector <double> times_; 				// Corresponding times
 	int pose_memory_; 							// Max poses stored
@@ -42,8 +45,12 @@ private:
 
 	geometry_msgs::Pose pose_;
 	geometry_msgs::Twist prev_vel_;
-	geometry_msgs::Twist vel_;	
-	
+	geometry_msgs::Twist vel_;
+
+	// Dynamic reconfigure
+	dynamic_reconfigure::Server<ram::StateEstimationConfig> reconf_server;
+	dynamic_reconfigure::Server<ram::StateEstimationConfig>::CallbackType f;
+
 public:
 	StateEstimation()
 	{
@@ -72,6 +79,10 @@ public:
 		odom_publisher_ = node_handle_.advertise<nav_msgs::Odometry>("filtered_state",1);
 		pitch_publisher_ = node_handle_.advertise<std_msgs::Float32>("pitch",1);
 		foaw_publisher_ = node_handle_.advertise<std_msgs::Int32>("foaw",1);
+
+		//Dynamic reconfigure
+		f = boost::bind(&StateEstimation::reconfigure, this, _1, _2);
+		reconf_server.setCallback(f);
 	}
 
 	~StateEstimation()
@@ -83,7 +94,7 @@ public:
 		nav_msgs::Odometry odom;
 		odom.header.stamp = ros::Time::now();
 		odom.header.frame_id = "filtered_state";
-		
+
 		// Do not filter pose for now. It is smooth enough.
 		odom.pose.pose = pose;
 
@@ -117,7 +128,7 @@ public:
 			int samplesBack;
 			bool optimalSampleReached;
 			double windowSpeed_x, windowSpeed_y, windowSpeed_z;
-			optimalSampleReached = false; 
+			optimalSampleReached = false;
 			samplesBack = 1;
 			while(!optimalSampleReached)
 			{
@@ -197,6 +208,15 @@ public:
 	   double res = y0 + (x - y0) * (dt_/(dt_+T_));
 	   return res;
 	}
+
+	/**
+		* Dynamic reconfigure callback,
+		* Allows for changing of the topic used as pose
+		*/
+		void reconfigure(ram::StateEstimationConfig &config, uint32_t level) {
+				std::string topic 	= config.pose_topic;
+				pose_subscriber_ 		= node_handle_.subscribe(topic, 1, &StateEstimation::poseCallback, this);
+		}
 };
 
 int main(int argc, char **argv)
